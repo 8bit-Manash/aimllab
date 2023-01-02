@@ -1,83 +1,131 @@
-def infoGain(P, N):
- import math
- return -P / (P + N) * math.log2(P / ( P + N)) - N / (P + N) * math.log2(N / (P + N))
-def insertNode(tree, addTo, Node):
- for k, v in tree.items(): 
- if isinstance(v, dict):
- tree[k] = insertNode(v, addTo, Node)
- if addTo in tree: 
- if isinstance(tree[addTo], dict):
- tree[addTo][Node] = 'None'
- else:
- tree[addTo] = {Node:'None'} 
- return tree
-def insertConcept(tree, addTo, Node):
- for k, v in tree.items(): 
- if isinstance(v, dict):
- tree[k] = insertConcept(v, addTo, Node)
- if addTo in tree: 
- tree[addTo] = Node
- return tree
-def getNextNode(data, AttributeList, concept, conceptVals, tree, addTo):
- Total = data.shape[0] 
- if Total == 0: 
- return tree
- 
- countC = {}
- for cVal in conceptVals: 
- dataCC = data[data[concept] == cVal] 
- countC[cVal] = dataCC.shape[0] 
- if countC[conceptVals[0]] == 0: 
- tree = insertConcept(tree, addTo, conceptVals[1])
- return tree
- 
- if countC[conceptVals[1]] == 0: 
- tree = insertConcept(tree, addTo, conceptVals[0])
- return tree
- ClassEntropy = infoGain(countC[conceptVals[1]],countC[conceptVals[0]]) 
- 
- Attr = {} 
- for a in AttributeList:
- Attr[a] = list(set(data[a]))
- 
- AttrCount = {} 
- EntropyAttr = {} 
- for att in Attr:
- for vals in Attr [att]:
- for c in conceptVals:
- iData = data[data[att] == vals] 
- dataAtt = iData[iData[concept] == c] 
- AttrCount[c] = dataAtt.shape[0] 
- TotalInfo = AttrCount[conceptVals[1]] + AttrCount[conceptVals[0]] 
- if AttrCount[conceptVals[1]] == 0 or AttrCount[conceptVals[0]] == 0:
- InfoGain=0
- else:
- InfoGain = infoGain(AttrCount[conceptVals[1]], AttrCount[conceptVals[0]]) 
- 
- if att not in EntropyAttr: 
- EntropyAttr[att] = ( TotalInfo / Total ) * InfoGain
- else:
- EntropyAttr[att] = EntropyAttr[att] + ( TotalInfo / Total ) * InfoGain
- 
- Gain = {}
- for g in EntropyAttr:
- Gain[g] = ClassEntropy - EntropyAttr[g] 
- Node = max(Gain, key = Gain.get) 
- tree = insertNode(tree, addTo, Node)
- for nD in Attr[Node]:
- tree = insertNode(tree, Node, nD) 
- newData = data[data[Node] == nD].drop(Node, axis = 1)
- AttributeList=list(newData)[:-1] 
- tree = getNextNode(newData, AttributeList, concept, conceptVals, tree, nD)
- return tree
-def main():
- import pandas as pd 
- data = pd.read_csv('id3.csv')
- AttributeList = list(data)[:-1] 
- concept = str(list(data)[-1]) 
- conceptVals = list(set(data[concept])) 
- tree = getNextNode(data, AttributeList, concept, conceptVals, {'root':'None'}, 'root')
- print(tree)
- compute(tree)
-main()
+from pprint import pprint
+import pandas as pd
+from pandas import DataFrame
 
+# df_tennis = DataFrame.from
+df_tennis = pd.read_csv('ID3.csv')
+
+# df_tennis = DataFrame.from
+df_tennis = pd.read_csv('ID3.csv')
+
+
+# print(df_tennis)
+
+# Calculate the Entropy of given probability
+def entropy(probs):
+    import math
+    return sum([-prob * math.log(prob, 2) for prob in probs])
+
+
+def entropy_of_list(a_list):  # Entropy calculation of list of discrete val ues(YES / NO)
+    from collections import Counter
+    cnt = Counter(x for x in a_list)
+    print("No and Yes Classes:", a_list.name, cnt)
+    num_instances = len(a_list) * 1.0
+    probs = [x / num_instances for x in cnt.values()]
+    return entropy(probs)  # Call Entropy:
+
+
+# The initial entropy of the YES/NO attribute for our dataset.
+# print(df_tennis['PlayTennis'])
+total_entropy = entropy_of_list(df_tennis['PlayTennis'])
+print("Entropy of given PlayTennis Data Set:", total_entropy)
+
+
+def information_gain(df, split_attribute_name, target_attribute_name, trace=0):
+    print("Information Gain Calculation of ", split_attribute_name)
+    df_split = df.groupby(split_attribute_name)
+    '''
+ Takes a DataFrame of attributes,and quantifies the entropy of a target
+ attribute after performing a split along the values of another attribute.
+ '''  # print(df_split.groups)
+    for name, group in df_split:
+        print(name)
+        print(group)
+    # Calculate Entropy for Target Attribute, as well as
+    # Proportion of Obs in Each Data-Split
+    nobs = len(df.index) * 1.0
+    # print("NOBS",nobs)
+    df_agg_ent = df_split.agg({target_attribute_name: [entropy_of_list, lambda x: len(x) / nobs]})[
+        target_attribute_name]
+    # print("FAGGED",df_agg_ent)
+    df_agg_ent.columns = ['Entropy', 'PropObservations']
+    # if traced: # helps understand what fxn is doing:
+    # Calculate Information Gain:
+    new_entropy = sum(df_agg_ent['Entropy'] * df_agg_ent['PropObservations'])
+    old_entropy = entropy_of_list(df[target_attribute_name])
+    return old_entropy - new_entropy
+
+
+# print('Info-gain for Outlook is :'+str( information_gain(df_tennis, 'Outlook', 'PlayTennis')),"\n")
+# print('\n Info-gain for Humidity is: ' + str( information_gain(df_tennis,'Humidity', 'PlayTennis')),"\n")
+# print('\n Info-gain for Wind is:' + str( information_gain(df_tennis, 'Wind', 'PlayTennis')),"\n")
+# print('\n Info-gain for Temperature is:' + str( information_gain(df_tennis, 'Temperature','PlayTennis')),"\n")
+
+
+def id3(df, target_attribute_name, attribute_names, default_class=None):  # Tally target attribute
+    from collections import Counter
+    cnt = Counter(x for x in df[target_attribute_name])  # class of YES /NO
+    # First check: Is this split of the dataset homogeneous?
+    if len(cnt) == 1:
+        return next(iter(cnt))
+    # Second check: Is this split of the dataset empty?
+    # if yes, return a default value
+    elif df.empty or (not attribute_names):
+        return default_class
+        # Otherwise: This dataset is ready to be divvied up!
+    else:
+        # [index_of_max] # most common value  of  target  attribute in dataset
+        default_class = max(cnt.keys())
+        # Choose Best Attribute to split on:
+        gainz = [information_gain(df, attr, target_attribute_name)
+                 for attr in attribute_names]
+        index_of_max = gainz.index(max(gainz))
+        best_attr = attribute_names[index_of_max]
+        # Create an empty tree, to be populated in a moment
+        tree = {best_attr: {}}
+        remaining_attribute_names = [
+            i for i in attribute_names if i != best_attr]
+        # Split dataset
+        # On each split, recursively call this algorithm.
+        # populate the empty tree with subtrees, which
+        # are the result of the recursive call
+        for attr_val, data_subset in df.groupby(best_attr):
+            subtree = id3(data_subset, target_attribute_name,
+                          remaining_attribute_names, default_class)
+            tree[best_attr][attr_val] = subtree
+        return tree
+
+
+# Predicting Attributes
+attribute_names = list(df_tennis.columns)
+print("List of Attributes:", attribute_names)
+attribute_names.remove('PlayTennis')  # Remove the class attribute
+print("Predicting Attributes:", attribute_names)
+
+# Tree Construction
+
+tree = id3(df_tennis, 'PlayTennis', attribute_names)
+print("\n\nThe Resultant Decision Tree is :\n")
+pprint(tree)
+
+
+# Classification Accuracy
+def classify(instance, tree, default=None):
+    attribute = next(iter(tree))  # tree.keys()[0]
+    if instance[attribute] in tree[attribute].keys():
+        result = tree[attribute][instance[attribute]]
+        if isinstance(result, dict):  # this is a tree, delve deeper
+            return classify(instance, result)
+        else:
+            return result  # this is a label
+    else:
+        return default
+
+
+df_tennis['predicted'] = df_tennis.apply(classify, axis=1, args=(tree, 'No'))
+# classify func allows for a default arg: when tree doesn't have answered for a particular
+# combination of attribute-values, we can use 'no' as the default guess
+print('Accuracy is:' + str(sum(df_tennis['PlayTennis'] ==
+      df_tennis['predicted']) / (1.0 * len(df_tennis.index))))
+df_tennis[['PlayTennis', 'predicted']]
